@@ -5166,10 +5166,17 @@ class API:
                                        instance.uuid,
                                        dev)
 
-        volume_bdm = self._create_volume_bdm_locally(
-            context, instance, device, volume, disk_bus=disk_bus,
-            device_type=device_type,
-            delete_on_termination=delete_on_termination)
+        instance.task_state = task_states.ATTACHING
+        instance.save(expected_task_state=[None])
+        try:
+            volume_bdm = self._create_volume_bdm_locally(
+                context, instance, device, volume, disk_bus=disk_bus,
+                device_type=device_type,
+                delete_on_termination=delete_on_termination)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                instance.task_state = None
+                instance.save()
         try:
             compute_utils.check_attach_and_reserve_volume(context,
                 self.volume_api, volume, instance, volume_bdm)
@@ -5181,6 +5188,9 @@ class API:
         except Exception:
             with excutils.save_and_reraise_exception():
                 volume_bdm.destroy()
+        finally:
+            instance.task_state = None
+            instance.save()
 
         return volume_bdm.device_name
 
@@ -5274,10 +5284,15 @@ class API:
 
     @check_instance_host(check_is_up=True)
     def _detach_volume(self, context, instance, volume):
+        instance.task_state = task_states.DETACHING
+        instance.save(expected_task_state=[None])
         try:
             self.volume_api.begin_detaching(context, volume['id'])
         except exception.InvalidInput as exc:
             raise exception.InvalidVolume(reason=exc.format_message())
+        finally:
+            instance.task_state = None
+            instance.save()
         attachments = volume.get('attachments', {})
         attachment_id = None
         if attachments and instance.uuid in attachments:

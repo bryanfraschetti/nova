@@ -4616,10 +4616,11 @@ class ConductorTaskTestCase(_BaseTaskTestCase, test_compute.BaseTestCase):
             mock.patch.object(objects.BlockDeviceMapping, 'save'),
             mock.patch.object(compute_rpcapi.ComputeAPI,
                 'reserve_block_device_name', return_value=bdm),
-            mock.patch.object(compute_rpcapi.ComputeAPI, 'attach_volume')
-        ) as (mock_no_bdm,
-              mock_check_availability_zone, mock_attachment_create,
-              mock_bdm_save, mock_reserve_bdm, mock_attach):
+            mock.patch.object(compute_rpcapi.ComputeAPI, 'attach_volume'),
+            mock.patch.object(instance, 'save'),
+        ) as (mock_no_bdm, mock_check_availability_zone,
+              mock_attachment_create, mock_bdm_save, mock_reserve_bdm,
+              mock_attach, mock_instance_save):
             mock_no_bdm.side_effect = exc.VolumeBDMNotFound(
                                           volume_id=uuids.volume)
 
@@ -4662,10 +4663,11 @@ class ConductorTaskTestCase(_BaseTaskTestCase, test_compute.BaseTestCase):
             mock.patch.object(objects.BlockDeviceMapping, 'save'),
             mock.patch.object(compute_rpcapi.ComputeAPI,
                 'reserve_block_device_name', return_value=bdm),
-            mock.patch.object(compute_rpcapi.ComputeAPI, 'attach_volume')
-        ) as (mock_no_bdm,
-              mock_check_availability_zone, mock_attachment_create,
-              mock_bdm_save, mock_reserve_bdm, mock_attach):
+            mock.patch.object(compute_rpcapi.ComputeAPI, 'attach_volume'),
+            mock.patch.object(instance, 'save')
+        ) as (mock_no_bdm, mock_check_availability_zone,
+              mock_attachment_create, mock_bdm_save, mock_reserve_bdm,
+              mock_attach, mock_instance_save):
             mock_no_bdm.side_effect = exc.VolumeBDMNotFound(
                     volume_id=uuids.volume)
             self.conductor.attach_volume(
@@ -4705,7 +4707,8 @@ class ConductorTaskTestCase(_BaseTaskTestCase, test_compute.BaseTestCase):
         mock_volume_api = mock.patch.object(self.conductor, 'volume_api',
                                             mock.MagicMock(spec=cinder.API))
 
-        with mock_volume_api as mock_v_api:
+        with mock_volume_api as mock_v_api, \
+            mock.patch.object(instance, 'save'):
             mock_v_api.attachment_create.side_effect = test.TestingException()
             self.assertRaises(test.TestingException,
                               self.conductor.attach_volume,
@@ -4736,13 +4739,14 @@ class ConductorTaskTestCase(_BaseTaskTestCase, test_compute.BaseTestCase):
 
         mock_reserve.side_effect = messaging.exceptions.MessagingTimeout()
 
-        self.assertRaises(messaging.exceptions.MessagingTimeout,
-                            self.conductor.attach_volume,
-                            self.context, instance, volume,
-                            None, None, None)
-        mock_get_by_volume_and_instance.assert_called_once_with(
-            self.context, volume['id'], instance.uuid)
-        fake_bdm.destroy.assert_called_once_with()
+        with mock.patch.object(instance, 'save'):
+            self.assertRaises(messaging.exceptions.MessagingTimeout,
+                                self.conductor.attach_volume,
+                                self.context, instance, volume,
+                                None, None, None)
+            mock_get_by_volume_and_instance.assert_called_once_with(
+                self.context, volume['id'], instance.uuid)
+            fake_bdm.destroy.assert_called_once_with()
 
     @mock.patch.object(compute_rpcapi.ComputeAPI, 'reserve_block_device_name')
     @mock.patch.object(objects.BlockDeviceMappingList, 'get_by_volume')
@@ -4763,7 +4767,8 @@ class ConductorTaskTestCase(_BaseTaskTestCase, test_compute.BaseTestCase):
         mock_volume_api = mock.patch.object(self.conductor, 'volume_api',
                                             mock.MagicMock(spec=cinder.API))
 
-        with mock_volume_api as mock_v_api:
+        with mock_volume_api as mock_v_api, \
+            mock.patch.object(instance, 'save'):
             mock_v_api.attachment_create.return_value = \
                 {'id': uuids.attachment_id}
             self.conductor.attach_volume(

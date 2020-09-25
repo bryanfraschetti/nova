@@ -436,12 +436,27 @@ class TestInstanceNotificationSample(
             'instance-shutdown-end',
             'instance-delete-end'
         ]
-        for idx, notification in enumerate(expected_notifications):
+        expected_task_state = [
+            None,
+            None,
+            None,
+            "attaching",
+            "attaching",
+            "deleting",
+            "deleting",
+            "deleting",
+            None
+        ]
+        for idx, (notification, task_state) in enumerate(zip(
+                expected_notifications, expected_task_state
+            )):
             self._verify_notification(
                 notification,
                 replacements={
                     'reservation_id': server['reservation_id'],
-                    'uuid': server['id']},
+                    'uuid': server['id'],
+                    "task_state": task_state
+                },
                 actual=self.notifier.versioned_notifications[idx])
 
     @mock.patch('nova.compute.manager.ComputeManager._build_resources')
@@ -591,7 +606,7 @@ class TestInstanceNotificationSample(
             extra_params={'networks': [{'port': self.neutron.port_1['id']}]})
         self._attach_volume_to_server(server, self.cinder.SWAP_OLD_VOL)
 
-        instance_updates = self._wait_for_notifications('instance.update', 8)
+        instance_updates = self._wait_for_notifications('instance.update', 10)
 
         # The first notification comes from the nova-conductor, the
         # eighth notification comes from nova-api the
@@ -682,11 +697,31 @@ class TestInstanceNotificationSample(
         self._delete_server(server)
 
         instance_updates = self._get_notifications('instance.update')
-        self.assertEqual(2, len(instance_updates),
+        self.assertEqual(3, len(instance_updates),
                          self.notifier.versioned_notifications)
 
         delete_steps = [
             # active -> deleting
+            {'state_update.new_task_state': None,
+             'state_update.old_task_state': None,
+             'state_update.old_state': 'active',
+             'state': 'active',
+             'task_state': None,
+             'tags': ["tag1"],
+             'block_devices': [{
+                "nova_object.data": {
+                    "boot_index": None,
+                    "delete_on_termination": False,
+                    "device_name": "/dev/sdb",
+                    "tag": None,
+                    "volume_id": "a07f71dc-8151-4e7d-a0cc-cd24a3f11113"
+                },
+                "nova_object.name": "BlockDevicePayload",
+                "nova_object.namespace": "nova",
+                "nova_object.version": "1.0"
+              }]
+            },
+
             {'state_update.new_task_state': 'deleting',
              'state_update.old_task_state': 'deleting',
              'state_update.old_state': 'active',
@@ -1705,13 +1740,17 @@ class TestInstanceNotificationSample(
             'instance-volume_attach-start',
             replacements={
                 'reservation_id': server['reservation_id'],
-                'uuid': server['id']},
+                'uuid': server['id'],
+                'task_state': 'attaching',
+            },
             actual=self.notifier.versioned_notifications[0])
         self._verify_notification(
             'instance-volume_attach-end',
             replacements={
                 'reservation_id': server['reservation_id'],
-                'uuid': server['id']},
+                'uuid': server['id'],
+                'task_state': 'attaching',
+            },
             actual=self.notifier.versioned_notifications[1])
 
     def _test_share_attach_detach(self, server):
@@ -2223,7 +2262,9 @@ class TestInstanceNotificationSample(
                 'reservation_id': server['reservation_id'],
                 'block_devices': block_devices,
                 'volume_id': self.cinder.SWAP_NEW_VOL,
-                'uuid': server['id']},
+                'uuid': server['id'],
+                'task_state': 'attaching',
+                },
             actual=self.notifier.versioned_notifications[0])
 
         tb = self.notifier.versioned_notifications[1]['payload'][
@@ -2237,7 +2278,9 @@ class TestInstanceNotificationSample(
                 'block_devices': block_devices,
                 'volume_id': self.cinder.SWAP_NEW_VOL,
                 'uuid': server['id'],
-                'fault.traceback': self.ANY},
+                'fault.traceback': self.ANY,
+                'task_state': 'attaching',
+                },
             actual=self.notifier.versioned_notifications[1])
 
     def _test_interface_attach_and_detach(self, server):

@@ -117,6 +117,12 @@ SHELVING_OFFLOADING = fields.InstanceTaskState.SHELVING_OFFLOADING
 # possible task states during unshelve()
 UNSHELVING = fields.InstanceTaskState.UNSHELVING
 
+# possible task states during attach_volume()
+ATTACHING = fields.InstanceTaskState.ATTACHING
+
+# possible task states during detach_volume()
+DETACHING = fields.InstanceTaskState.DETACHING
+
 ALLOW_REBOOT = [None, REBOOTING, REBOOT_PENDING, REBOOT_STARTED, RESUMING,
                 REBOOTING_HARD, UNPAUSING, PAUSING, SUSPENDING]
 

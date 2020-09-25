@@ -8155,6 +8155,7 @@ class ComputeManager(manager.Manager):
         return do_reserve()
 
     @wrap_exception()
+    @reverts_task_state
     @wrap_instance_event(prefix='compute')
     @wrap_instance_fault
     def attach_volume(self, context, instance, bdm):
@@ -8220,6 +8221,8 @@ class ComputeManager(manager.Manager):
             action=fields.NotificationAction.VOLUME_ATTACH,
             phase=fields.NotificationPhase.END,
             volume_id=bdm.volume_id)
+        instance.task_state = None
+        instance.save()
 
     def _notify_volume_usage_detach(self, context, instance, bdm):
         if CONF.volume_usage_poll_interval <= 0:
@@ -8311,6 +8314,7 @@ class ComputeManager(manager.Manager):
                                 instance=instance)
 
     @wrap_exception()
+    @reverts_task_state
     @wrap_instance_event(prefix='compute')
     @wrap_instance_fault
     def detach_volume(self, context, volume_id, instance, attachment_id):
@@ -8329,6 +8333,8 @@ class ComputeManager(manager.Manager):
                     context, volume_id, instance.uuid)
             self._detach_volume(context, bdm, instance,
                                 attachment_id=attachment_id)
+            instance.task_state = None
+            instance.save()
 
         do_detach_volume(context, volume_id, instance, attachment_id)
 

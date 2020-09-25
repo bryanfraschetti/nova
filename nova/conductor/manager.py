@@ -2268,6 +2268,9 @@ class ComputeTaskManager:
         compute for reserving a block-device mapping instead of having nova-api
         do it starting with API version 2.101.
         """
+        instance.task_state = task_states.ATTACHING
+        instance.save(expected_task_state=[None])
+        # reset the task state when RPC Call timeout
         try:
             volume_bdm = self._create_volume_bdm(
                 context, instance, device, volume, disk_bus=disk_bus,
@@ -2278,6 +2281,8 @@ class ComputeTaskManager:
             # we never received the answer. In this case it is safe to delete
             # the attachment as nobody will ever pick it up again.
             with excutils.save_and_reraise_exception():
+                instance.task_state = None
+                instance.save()
                 try:
                     objects.BlockDeviceMapping.get_by_volume_and_instance(
                         context, volume['id'], instance.uuid).destroy()
@@ -2297,5 +2302,8 @@ class ComputeTaskManager:
         except Exception:
             with excutils.save_and_reraise_exception():
                 volume_bdm.destroy()
+        finally:
+            instance.task_state = None
+            instance.save()
 
         return volume_bdm.device_name

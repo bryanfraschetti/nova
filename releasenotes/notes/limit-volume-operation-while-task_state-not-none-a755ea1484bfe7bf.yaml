@@ -1,0 +1,9 @@
+---
+
+fixes:
+  - |
+    Previously attempts to  attach, detach and swap volumes while an
+    instance had a non ``None`` ``task_state``, such as ``rebuilding``
+    or ``migrating`` were allowed. Such attempts are now rejected to
+    avoid complications arising from parallel requests. So we will
+    check the ``task_state`` before the execute these operations.

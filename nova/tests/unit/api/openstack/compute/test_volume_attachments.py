@@ -26,6 +26,7 @@ from nova.api.openstack import api_version_request
 from nova.api.openstack import common
 from nova.api.openstack.compute import volume_attachments
 from nova.compute import api as compute_api
+from nova.compute import task_states
 from nova.compute import vm_states
 from nova import context
 from nova import exception
@@ -213,6 +214,23 @@ class VolumeAttachTestsV21(test.NoDBTestCase):
         self.controller.delete(req, FAKE_UUID, FAKE_UUID_A)
         self.assertTrue(mock_detach.called)
 
+    @mock.patch.object(common, 'get_instance')
+    def test_detach_vol_task_state_not_supported(self, mock_get_instance):
+        inst = fake_instance.fake_instance_obj(self.context,
+                                               **{'uuid': FAKE_UUID})
+        inst.task_states = task_states.MIGRATING
+        mock_get_instance.return_value = inst
+        req = fakes.HTTPRequest.blank(
+                  '/v2/servers/id/os-volume_attachments/uuid', version='2.19')
+        req.method = 'DELETE'
+        req.headers['content-type'] = 'application/json'
+        req.environ['nova.context'] = self.context
+        self.assertRaises(webob.exc.HTTPConflict,
+                          self.controller.delete,
+                          req,
+                          FAKE_UUID,
+                          FAKE_UUID_A)
+
     def test_detach_vol_not_found(self):
         self.stub_out('nova.compute.api.API.detach_volume',
                       lambda self, context, instance, volume: None)
@@ -327,6 +345,21 @@ class VolumeAttachTestsV21(test.NoDBTestCase):
         self.assertEqual('00000000-aaaa-aaaa-aaaa-000000000000',
                          result['volumeAttachment']['id'])
         self.assertEqual('/dev/myfake', result['volumeAttachment']['device'])
+
+    @mock.patch.object(common, 'get_instance')
+    def test_attach_vol_task_state_not_supported(self, mock_get_instance):
+        body = {'volumeAttachment': {'volumeId': FAKE_UUID_A,
+                                    'device': '/dev/fake'}}
+
+        inst = fake_instance.fake_instance_obj(self.context,
+                                               **{'uuid': FAKE_UUID})
+        inst.task_state = task_states.MIGRATING
+        mock_get_instance.return_value = inst
+        self.assertRaises(webob.exc.HTTPConflict,
+                          self.controller.create,
+                          self.req,
+                          FAKE_UUID,
+                          body=body)
 
     @mock.patch.object(compute_api.API, 'attach_volume',
                        return_value='/dev/myfake')

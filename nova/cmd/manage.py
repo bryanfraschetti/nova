@@ -47,6 +47,7 @@ from oslo_log import log as logging
 import oslo_messaging as messaging
 from oslo_serialization import jsonutils
 from oslo_utils import encodeutils
+from oslo_utils import timeutils
 from oslo_utils import uuidutils
 import prettytable
 from sqlalchemy.engine import url as sqla_url
@@ -3271,6 +3272,139 @@ class VolumeAttachmentCommands(object):
             print(str(e))
             return 3
         except exception.InvalidInput as e:
+            print(str(e))
+            return 2
+        except Exception as e:
+            print('Unexpected error, see nova-manage.log for the full '
+                  'trace: %s ' % str(e))
+            LOG.exception('Unexpected error')
+            return 1
+
+    @action_description(
+        _("Remove the Block Device Mapping for a given volume attachment"))
+    @args(
+        'instance_uuid', metavar='<instance_uuid>',
+        help='UUID of the instance')
+    @args(
+        'volume_id', metavar='<volume_id>',
+        help='UUID of the volume')
+    @args(
+        '--dry-run', dest="dry_run", action="store_true", default=False,
+        help='Display what the command would modify but take no action')
+    @args(
+        '--force', dest="force_action", action="store_true", default=False,
+        help='Forcefully mark record as deleted')
+    def remove(
+            self,
+            instance_uuid=None,
+            volume_id=None,
+            dry_run=False,
+            force_action=False
+        ):
+        """Forcefully mark the entry associated with a volume attachment
+        as deleted in the Block Device Mapping table
+
+        In certain situations, it is possible for the Nova DB to have a block
+        device mapping record, suggesting that a volume is attached, while
+        the Cinder DB has no knowledge of the attachment. When this happens
+        the volume is listed as available since Cinder sees the volume as
+        unattached. However, attempts to attach the volume fail because nova
+        sees the volume as mapped. Attempts to detach the volume fail because
+        Cinder thinks the volume is already detached. The only path forward is
+        to delete the entry from the block_device_mapping table (LP: #2141355)
+
+        Usage of this command should be reserved for situations where the
+        volume attachment record only exists in Nova, and Cinder does not have
+        a corresponding entry. As such, there is no need to propagate the
+        deletion to Cinder.
+
+        :param instance_uuid: UUID of instance
+        :param volume_id: ID of volume attached to the instance
+        :return status_code: volume-remove status_code 0 on success
+
+        Return codes:
+        * 0: Command completed successfully.
+        * 1: An unexpected error happened.
+        * 2: Instance does not exist.
+        * 3: Volume is not attached to instance.
+        """
+
+        try:
+            ctxt = context.get_admin_context()
+            im = objects.InstanceMapping.get_by_instance_uuid(
+                ctxt, instance_uuid)
+            with context.target_cell(ctxt, im.cell_mapping) as cctxt:
+
+                instance = objects.Instance.get_by_uuid(cctxt, instance_uuid)
+                bdm = objects.BlockDeviceMapping.get_by_volume_and_instance(
+                        cctxt, volume_id, instance_uuid)
+
+                locking_reason = (
+                    f'Deleting connection_info for BDM {bdm.uuid} '
+                    f'associated with instance {instance_uuid} and volume '
+                    f'{volume_id}.')
+
+                with locked_instance(
+                    im.cell_mapping, instance, locking_reason
+                    ):
+
+                    if dry_run:
+                        original = bdm.obj_to_primitive()['nova_object.data']
+                        simulated = original.copy()
+                        simulated['deleted'] = bdm.id
+                        simulated['deleted_at'] = timeutils.utcnow()
+
+                        print(
+                            "Dry-run mode enabled, no action will be taken\n"
+                            "The following resources would be affected\n"
+                            f"Instance: {instance_uuid}, Volume: {volume_id}\n"
+                            f"BDM to be marked for deletion:\n{original}\n"
+                            f"BDM after removal would be:\n{simulated}"
+                        )
+                        return
+
+                    if not force_action and any([
+                        bdm.get("attachment_id"),
+                        bdm.get("updated_at"),
+                        bdm.get("volume_size"),
+                        bdm.get("connection_info"),
+                    ]):
+                        print(
+                            "WARNING: one or more of `updated_at`, "
+                            "`volume_size`, `connection_info`, and "
+                            "`attachment_id` is *not* NULL. This is "
+                            "likely a proper and successful attachment. "
+                            "Inspect the BDM record before proceeding. "
+                            "Deletion of this BDM has the potential to break "
+                            "the environment and will require --force."
+                        )
+                        return
+
+                    forced = "--force" if force_action else ""
+                    LOG.info(
+                        "Executing: nova-manage volume_attachment remove "
+                        f"{instance_uuid} {volume_id} {forced}"
+                    )
+
+                    LOG.info(
+                        f"Marking the following BDM record as deleted: {bdm}"
+                    )
+                    bdm.destroy()
+
+                    cctxt.read_deleted = "yes"
+                    deleted_bdm = objects.BlockDeviceMapping \
+                        .get_by_volume_and_instance(
+                            cctxt, volume_id, instance_uuid)
+                    LOG.info(
+                        f"Updated BDM record after destruction: {deleted_bdm}"
+                    )
+        except exception.VolumeBDMNotFound as e:
+            print(str(e))
+            return 3
+        except (
+            exception.InstanceNotFound,
+            exception.InstanceMappingNotFound,
+        ) as e:
             print(str(e))
             return 2
         except Exception as e:

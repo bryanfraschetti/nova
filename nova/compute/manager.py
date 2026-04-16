@@ -8240,6 +8240,24 @@ class ComputeManager(manager.Manager):
                     instance, bdms, new_bdm)
 
             # NOTE(vish): create bdm here to avoid race condition
+            instance.refresh()
+            if instance.task_state != task_states.ATTACHING:
+                # This means the task state has been reset, likely due to an
+                # RPC timeout, so we should not create the BDM
+                LOG.warning(
+                    "Instance %(instance_uuid)s is not in 'attaching' task "
+                    "state. Therefore, not attaching volume %(volume_id)s to "
+                    "it.", {
+                        'instance_uuid': instance.uuid,
+                        'volume_id': volume_id
+                    }
+)
+                raise exception.InstanceInvalidState(
+                    attr='task_state',
+                    instance_uuid=instance.uuid,
+                    state=instance.task_state,
+                    method='reserve_block_device_name'
+                )
             new_bdm.create()
             return new_bdm
 

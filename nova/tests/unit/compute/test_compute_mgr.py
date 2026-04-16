@@ -779,7 +779,9 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase,
                                   '_get_device_name_for_instance',
                                   return_value='/dev/vda'),
                 mock.patch.dict(self.compute.driver.capabilities,
-                                supports_tagged_attach_volume=True)):
+                                supports_tagged_attach_volume=True),
+                mock.patch.object(instance, 'refresh'),):
+            instance.task_state = task_states.ATTACHING
             bdm = self.compute.reserve_block_device_name(
                     self.context, instance, None, None, None, None, 'foo',
                     False)
@@ -808,7 +810,9 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase,
                                   '_get_device_name_for_instance',
                                   return_value='/dev/vda'),
                 mock.patch.dict(self.compute.driver.capabilities,
-                                supports_multiattach=True)):
+                                supports_multiattach=True),
+                mock.patch.object(instance, 'refresh'),):
+            instance.task_state = task_states.ATTACHING
             self.compute.reserve_block_device_name(
                 self.context, instance, device=None, volume_id=uuids.volume_id,
                 disk_bus=None, device_type=None, tag=None, multiattach=True)

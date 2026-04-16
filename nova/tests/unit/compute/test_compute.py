@@ -8835,7 +8835,10 @@ class ComputeTestCase(BaseTestCase,
 
     def test_reserve_block_device_name(self):
         instance = self._create_fake_instance_obj(
-                params={'root_device_name': '/dev/vda'})
+                params={
+                    'root_device_name': '/dev/vda',
+                    'task_state': task_states.ATTACHING,
+                })
         bdm = objects.BlockDeviceMapping(
                 **{'context': self.context, 'source_type': 'image',
                    'destination_type': 'local',
@@ -8866,7 +8869,10 @@ class ComputeTestCase(BaseTestCase,
 
     def test_reserve_block_device_name_with_iso_instance(self):
         instance = self._create_fake_instance_obj(
-                params={'root_device_name': '/dev/hda'})
+                params={
+                    'root_device_name': '/dev/hda',
+                    'task_state': task_states.ATTACHING,
+                })
         bdm = objects.BlockDeviceMapping(
                 context=self.context,
                 **{'source_type': 'image', 'destination_type': 'local',
